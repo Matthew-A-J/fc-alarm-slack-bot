@@ -14,6 +14,7 @@ from src.fc_alarm_bot.utils import (
     safe_int,
     signature,
 )
+from src.fc_alarm_bot.state import BotState
 from src.fc_alarm_bot.logger import log
 from src.fc_alarm_bot.parser import (
     gateway_banner_visible,
@@ -64,7 +65,7 @@ def monitor(args):
     channel_health = os.getenv("SLACK_CHANNEL_HEALTH", "").strip()
     if not channel_main or not channel_health:
         raise RuntimeError("Missing SLACK_CHANNEL_MAIN / SLACK_CHANNEL_HEALTH")
-
+    state = BotState()
     HERE = "<!here>"
 
     # MAIN alerts get @here
@@ -73,26 +74,6 @@ def monitor(args):
     # HEALTH only uses @here for first failure episode
     mention_health_issue = HERE
 
-    # State
-    history = {}
-    last_sent_update = {}
-    last_sent_trend_level = {}
-    last_sent_spike_delta = {}
-    last_seen_ts = {}
-
-    last_sig = None
-    last_change_ts = time.time()
-
-    # Anti-spam for issues
-    consecutive_failures = 0
-    here_sent_for_failure_episode = False
-    last_fail_alert_ts = 0.0
-
-    # Recovery anti-spam
-    last_recovery_ts = 0.0
-    recovery_active = False
-
-    last_heartbeat = time.time()
 
     # Startup message (HEALTH, no @here)
     slack_send_to_channel(
@@ -128,15 +109,15 @@ def monitor(args):
                 # Track staleness based on top-rows signature
                 if rows:
                     sig = signature(rows)
-                    if last_sig is None:
-                        last_sig = sig
-                        last_change_ts = time.time()
+                    if state.last_sig is None:
+                        state.last_sig = sig
+                        state.last_change_ts = time.time()
                     else:
-                        if sig != last_sig:
-                            last_sig = sig
-                            last_change_ts = time.time()
+                        if sig != state.last_sig:
+                            state.last_sig = sig
+                            state.last_change_ts = time.time()
 
-                stale_minutes = int((time.time() - last_change_ts) / 60)
+                stale_minutes = int((time.time() - state.last_change_ts) / 60)
 
                 # Decide if we should attempt recovery (ONLY under conditions)
                 should_recover = False
@@ -144,28 +125,28 @@ def monitor(args):
 
                 if gw_visible and args.recover_on_gateway:
                     # gateway-based recovery uses its own cooldown
-                    if (time.time() - last_recovery_ts) >= (args.gateway_refresh_cooldown_min * 60):
+                    if (time.time() - state.last_recovery_ts) >= (args.gateway_refresh_cooldown_min * 60):
                         should_recover = True
                         reason = "gateway_visible"
 
                 if (not should_recover) and args.recover_on_stale and stale_minutes >= args.stale_minutes:
-                    if (time.time() - last_recovery_ts) >= (args.stale_refresh_cooldown_min * 60):
+                    if (time.time() - state.last_recovery_ts) >= (args.stale_refresh_cooldown_min * 60):
                         should_recover = True
                         reason = f"stale_{stale_minutes}m"
 
                 # If we can’t read rows but the dashboard exists, treat it as a failure (not “stale change”)
                 if len(rows) == 0:
-                    consecutive_failures += 1
-                    log(f"[WARN] Parsed 0 rows. failures={consecutive_failures} gw_visible={gw_visible} stale={stale_minutes}m")
+                    state.consecutive_failures += 1
+                    log(f"[WARN] Parsed 0 rows. failures={state.consecutive_failures} gw_visible={gw_visible} stale={stale_minutes}m")
 
                     # only alert health after N consecutive failures and cooldown
                     now_ts = time.time()
-                    if consecutive_failures >= args.fail_alert_after and (now_ts - last_fail_alert_ts) >= (args.fail_alert_cooldown_min * 60):
-                        last_fail_alert_ts = now_ts
-                        mention = mention_health_issue if not here_sent_for_failure_episode else ""
-                        here_sent_for_failure_episode = True
+                    if state.consecutive_failures >= args.fail_alert_after and (now_ts - state.last_fail_alert_ts) >= (args.fail_alert_cooldown_min * 60):
+                        state.last_fail_alert_ts = now_ts
+                        mention = mention_health_issue if not state.here_sent_for_failure_episode else ""
+                        state.here_sent_for_failure_episode = True
                         slack_send_to_channel(
-                            f"⚠️ Bot can't read the table (0 rows) repeatedly (x{consecutive_failures}).",
+                            f"⚠️ Bot can't read the table (0 rows) repeatedly (x{state.consecutive_failures}).",
                             channel=channel_health,
                             mention=mention,
                         )
@@ -179,13 +160,13 @@ def monitor(args):
                         continue
                 else:
                     # success read -> clear failure episode
-                    consecutive_failures = 0
-                    here_sent_for_failure_episode = False
+                    state.consecutive_failures = 0
+                    state.here_sent_for_failure_episode = False
 
                 # ---- Recovery block (minimal messaging, no spam) ----
                 if should_recover:
-                    if not recovery_active:
-                        recovery_active = True
+                    if not state.recovery_active:
+                        state.recovery_active = True
                         slack_send_to_channel(
                             f"🛠️ Recovery starting ({reason}). Reloading dashboard"
                             + (" + set date to today..." if args.force_today_date else "..."),
@@ -205,14 +186,14 @@ def monitor(args):
                         ok = False
                         note = f"Recovery failed: {str(e)[:200]}"
 
-                    last_recovery_ts = time.time()
-                    recovery_active = False
+                    state.last_recovery_ts = time.time()
+                    state.recovery_active = False
 
                     if ok:
                         slack_send_to_channel(f"✅ Recovery complete. {note}", channel=channel_health, mention="")
                         # After a successful recovery, reset stale timer
-                        last_change_ts = time.time()
-                        last_sig = None
+                        state.last_change_ts = time.time()
+                        state.last_sig = None
                     else:
                         # One clean issue alert (no spam loop)
                         slack_send_to_channel(
@@ -234,10 +215,10 @@ def monitor(args):
                 for r in rows:
                     k = dedupe_key_for(r)
                     inc = safe_int(r["incidents"])
-                    last_seen_ts[k] = now
+                    state.last_seen_ts[k] = now
 
-                    if k not in history:
-                        history[k] = deque(maxlen=500)
+                    if k not in state.history:
+                        state.history[k] = deque(maxlen=500)
                         # NEW HOT: first seen at >= threshold
                         if inc >= args.new_alarm_incidents and inc >= args.min_incidents:
                             rr = dict(r)
@@ -246,45 +227,45 @@ def monitor(args):
                             rr["window_min"] = args.trend_window_min
                             new_hot.append(rr)
 
-                    history[k].append(SeriesPoint(now, inc))
+                    state.history[k].append(SeriesPoint(now, inc))
 
-                    while history[k] and (now - history[k][0].t) > window_sec:
-                        history[k].popleft()
+                    while state.history[k] and (now - state.history[k][0].t) > window_sec:
+                        state.history[k].popleft()
 
                     # SPIKE: Δ over window
-                    if len(history[k]) >= 2:
-                        oldest = history[k][0].incidents
-                        newest = history[k][-1].incidents
+                    if len(state.history[k]) >= 2:
+                        oldest = state.history[k][0].incidents
+                        newest = state.history[k][-1].incidents
                         delta = newest - oldest
 
                         if newest >= args.min_incidents and delta >= args.spike_delta:
-                            prev_best = last_sent_spike_delta.get(k, -10**9)
+                            prev_best = state.last_sent_spike_delta.get(k, -10**9)
                             if delta > prev_best:
                                 rr = dict(r)
                                 rr["prev_incidents"] = oldest
                                 rr["delta"] = delta
                                 rr["window_min"] = args.trend_window_min
                                 spikes.append(rr)
-                                last_sent_spike_delta[k] = delta
+                                state.last_sent_spike_delta[k] = delta
                                 spike_keys.add(k)
 
                         # TREND: climbing (no @here)
-                        prev = history[k][-2].incidents
+                        prev = state.history[k][-2].incidents
                         if (k not in spike_keys) and newest >= args.min_incidents and newest > prev:
-                            prev_level = last_sent_trend_level.get(k, -10**9)
+                            prev_level = state.last_sent_trend_level.get(k, -10**9)
                             if newest > prev_level:
                                 rr = dict(r)
                                 rr["prev_incidents"] = oldest
                                 rr["delta"] = delta
                                 rr["window_min"] = args.trend_window_min
                                 trends.append(rr)
-                                last_sent_trend_level[k] = newest
+                                state.last_sent_trend_level[k] = newest
                                 trend_keys.add(k)
 
                     # UPDATE: suppress if spike/trend
-                    prev_info = last_sent_update.get(k)
+                    prev_info = state.last_sent_update.get(k)
                     if prev_info is None:
-                        last_sent_update[k] = (inc, 0.0)
+                        state.last_sent_update[k] = (inc, 0.0)
                     else:
                         prev_inc, prev_ts = prev_info
                         dnow = inc - int(prev_inc)
@@ -295,10 +276,10 @@ def monitor(args):
                                 rr["delta"] = dnow
                                 rr["window_min"] = None
                                 updates.append(rr)
-                                last_sent_update[k] = (inc, now)
+                                state.last_sent_update[k] = (inc, now)
                             else:
                                 # still keep the latest inc, but keep cooldown timestamp
-                                last_sent_update[k] = (inc, prev_ts)
+                                state.last_sent_update[k] = (inc, prev_ts)
 
                 # Dedupe keep-highest incidents per key
                 def keep_highest(lst):
@@ -351,8 +332,8 @@ def monitor(args):
                     )
 
                 # Heartbeat
-                if args.heartbeat_minutes > 0 and (time.time() - last_heartbeat) >= (args.heartbeat_minutes * 60):
-                    last_heartbeat = time.time()
+                if args.heartbeat_minutes > 0 and (time.time() - state.last_heartbeat) >= (args.heartbeat_minutes * 60):
+                    state.last_heartbeat = time.time()
                     slack_send_to_channel(
                         f"💗 Heartbeat: running | rows={args.rows} | last_change={stale_minutes}m ago",
                         channel=channel_health,
@@ -362,13 +343,13 @@ def monitor(args):
                 # Prune memory
                 if args.prune_after_min > 0:
                     cutoff = now - (args.prune_after_min * 60)
-                    dead = [k for k, ts in last_seen_ts.items() if ts < cutoff]
+                    dead = [k for k, ts in state.last_seen_ts.items() if ts < cutoff]
                     for k in dead:
-                        history.pop(k, None)
-                        last_sent_update.pop(k, None)
-                        last_sent_trend_level.pop(k, None)
-                        last_sent_spike_delta.pop(k, None)
-                        last_seen_ts.pop(k, None)
+                        state.history.pop(k, None)
+                        state.last_sent_update.pop(k, None)
+                        state.last_sent_trend_level.pop(k, None)
+                        state.last_sent_spike_delta.pop(k, None)
+                        state.last_seen_ts.pop(k, None)
 
                 log(f"Read {len(rows)} rows. events={len(new_hot)+len(spikes)+len(trends)+len(updates)} stale={stale_minutes}m gw={gw_visible}")
                 time.sleep(args.poll_seconds)
@@ -377,16 +358,16 @@ def monitor(args):
                 slack_send_to_channel("🛑 Bot stopped (Ctrl+C).", channel=channel_health, mention=mention_health_issue)
                 raise
             except Exception as e:
-                consecutive_failures += 1
-                log(f"[WARN] Poll failed (#{consecutive_failures}): {str(e)}")
-
+                import traceback
+                traceback.print_exc()
+                raise
                 now_ts = time.time()
-                if consecutive_failures >= args.fail_alert_after and (now_ts - last_fail_alert_ts) >= (args.fail_alert_cooldown_min * 60):
-                    last_fail_alert_ts = now_ts
-                    mention = mention_health_issue if not here_sent_for_failure_episode else ""
-                    here_sent_for_failure_episode = True
+                if state.consecutive_failures >= args.fail_alert_after and (now_ts - state.last_fail_alert_ts) >= (args.fail_alert_cooldown_min * 60):
+                    state.last_fail_alert_ts = now_ts
+                    mention = mention_health_issue if not state.here_sent_for_failure_episode else ""
+                    state.here_sent_for_failure_episode = True
                     slack_send_to_channel(
-                        f"⚠️ Bot poll failing (x{consecutive_failures}).\n```{str(e)[:240]}```",
+                        f"⚠️ Bot poll failing (x{state.consecutive_failures}).\n```{str(e)[:240]}```",
                         channel=channel_health,
                         mention=mention,
                     )
