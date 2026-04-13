@@ -14,6 +14,7 @@ from src.fc_alarm_bot.utils import (
     safe_int,
     signature,
 )
+from src.fc_alarm_bot.logger import log
 from src.fc_alarm_bot.parser import (
     gateway_banner_visible,
     pick_best_dashboard_page,
@@ -28,10 +29,6 @@ import os
 # -----------------------------
 # Logging
 # -----------------------------
-def log(msg: str):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
-
 
 # -----------------------------
 # Slack
