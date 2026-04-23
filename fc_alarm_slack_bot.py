@@ -75,14 +75,6 @@ def monitor(args):
     # HEALTH only uses @here for first failure episode
     mention_health_issue = HERE
 
-
-    # Startup message (HEALTH, no @here)
-    slack_send_to_channel(
-        f"✅ FC Alarm bot started. poll={args.poll_seconds}s | rows={args.rows} | stale={args.stale_minutes}m",
-        channel=channel_health,
-        mention="",
-    )
-
     with sync_playwright() as p:
         if args.attach:
             browser = p.chromium.connect_over_cdp(args.cdp)
@@ -99,6 +91,8 @@ def monitor(args):
         time.sleep(args.startup_grace)
 
         wait_for_alarm_list(page, timeout_ms=180_000)
+
+        startup_seed_done = False
 
         while True:
             try:
@@ -205,10 +199,70 @@ def monitor(args):
 
                     time.sleep(args.poll_seconds)
                     continue
-
+                
                 # ---- Alert logic ----
-                now = time.time()
-                new_hot, spikes, trends, updates = detect_events(rows, state, args)
+
+                # STARTUP BLOCK BEGINS 
+                if not startup_seed_done:
+                    now = time.time()
+
+                    for r in rows:
+                       k = dedupe_key_for(r)
+                       inc = safe_int(r["incidents"])
+
+                       state.last_seen_ts[k] = now
+                       if k not in state.history:
+                           state.history[k] = deque(maxlen=500)
+                       state.history[k].append(SeriesPoint(now, inc))
+                       state.last_sent_update[k] = (inc, 0.0)
+
+                    hot_rows = [r for r in rows if safe_int(r["incidents"]) >= args.new_alarm_incidents]
+                
+                    deduped_hot = []
+                    seen_hot_keys = set()
+
+                    for r in hot_rows:
+                        k = dedupe_key_for(r)
+                        if k not in seen_hot_keys:
+                            seen_hot_keys.add(k)
+                            deduped_hot.append(r)
+
+                    top_hot = deduped_hot[:5]
+
+                    summary_lines = [
+                        "✅ FC Alarm bot started.",
+                        "Startup snapshot loaded from current top 10.",
+                        f"Hot rule: incidents >= {args.new_alarm_incidents}",
+                        f"Currently hot in top 10: {len(deduped_hot)} alarms."
+                    ]
+                    
+                    if top_hot:
+                        summary_lines.append("")
+                        summary_lines.append(f"Top {min(5, len(top_hot))} hot alarms already above threshold:")
+                        for i, r in enumerate(top_hot, 1):
+                            summary_lines.append(
+                                f"{i}. {r['source']} | Area {r['area']} | Incidents {safe_int(r['incidents'])}"
+                        )
+
+                    if startup_seed_done:
+                        raise RuntimeError("startup summary send reached after startup_seed_done=True")
+                    
+                    log(f"[DEBUG] startup_seed_done before send: {startup_seed_done}")
+                    slack_send_to_channel(
+                        "\n".join(summary_lines),
+                        channel=channel_health,
+                        mention="",
+                    )
+
+                    startup_seed_done = True
+                    log(f"[DEBUG] startup_seed_done after send: {startup_seed_done}")
+                
+                    time.sleep(args.poll_seconds)
+                    continue
+                # STARTUP BLOCK ENDS
+                else:
+                    now = time.time()
+                    new_hot, spikes, trends, updates = detect_events(rows, state, args)
 
                 # MAIN channel: NEW HOT + SPIKES with @here
                 if new_hot:
@@ -273,9 +327,9 @@ def monitor(args):
                 slack_send_to_channel("🛑 Bot stopped (Ctrl+C).", channel=channel_health, mention=mention_health_issue)
                 raise
             except Exception as e:
-                import traceback
-                traceback.print_exc()
-                raise
+                state.consecutive_failures += 1
+                log(f"[WARN] Poll failed (#{state.consecutive_failures}). {str(e)}")
+            
                 now_ts = time.time()
                 if state.consecutive_failures >= args.fail_alert_after and (now_ts - state.last_fail_alert_ts) >= (args.fail_alert_cooldown_min * 60):
                     state.last_fail_alert_ts = now_ts

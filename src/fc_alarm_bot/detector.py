@@ -41,17 +41,19 @@ def detect_events(rows, state: BotState, args):
                     if len(state.history[k]) >= 2:
                         oldest = state.history[k][0].incidents
                         newest = state.history[k][-1].incidents
+                        prev   = state.history[k][-2].incidents
                         delta = newest - oldest
+                        delta_from_prev = newest - prev
 
-                        if newest >= args.min_incidents and delta >= args.spike_delta:
+                        if newest >= args.min_incidents and delta_from_prev >= args.spike_delta:
                             prev_best = state.last_sent_spike_delta.get(k, -10**9)
-                            if delta > prev_best:
+                            if delta_from_prev > prev_best:
                                 rr = dict(r)
                                 rr["prev_incidents"] = oldest
-                                rr["delta"] = delta
+                                rr["delta"] = delta_from_prev
                                 rr["window_min"] = args.trend_window_min
                                 spikes.append(rr)
-                                state.last_sent_spike_delta[k] = delta
+                                state.last_sent_spike_delta[k] = delta_from_prev
                                 spike_keys.add(k)
 
                         # TREND: climbing (no @here)
