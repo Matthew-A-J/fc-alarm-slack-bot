@@ -19,7 +19,11 @@ def wait_for_alarm_list(page, timeout_ms=180_000):
 def read_top_rows(page, max_rows: int) -> list[dict]:
     try:
         row_locs = page.locator("[data-row-index]").filter(has=page.locator("[data-column-id= 'Source'],[data-colum-id= 'source']"))
-        n = min(row_locs.count(), max_rows)
+
+        # termporary debug 
+
+        scan_limit = min(row_locs.count(), max_rows * 3)
+        n = scan_limit
         out = []
         for i in range(n):
             row = row_locs.nth(i)
