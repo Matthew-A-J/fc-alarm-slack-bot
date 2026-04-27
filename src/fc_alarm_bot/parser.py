@@ -18,7 +18,7 @@ def wait_for_alarm_list(page, timeout_ms=180_000):
 
 def read_top_rows(page, max_rows: int) -> list[dict]:
     try:
-        row_locs = page.locator("[data-row-index]")
+        row_locs = page.locator("[data-row-index]").filter(has=page.locator("[data-column-id= 'Source'],[data-colum-id= 'source']"))
         n = min(row_locs.count(), max_rows)
         out = []
         for i in range(n):
@@ -47,7 +47,28 @@ def read_top_rows(page, max_rows: int) -> list[dict]:
                     "downtime_hours": dh_txt,
                 }
             )
-        return out
+        clean = [] 
+        seen = set()
+
+        for r in out:
+            if safe_int(r.get("incidents", 0)) <= 0:
+                continue
+
+            K = (
+                r.get("source", "").strip(),
+                r.get("area", "").strip(),
+                r.get("message", "").strip(),
+                safe_int(r.get("incidents", 0)),
+            )
+
+            if K in seen:
+                continue
+
+            seen.add(K)
+            clean.append(r)
+
+        return clean[:max_rows]
+    
     except Exception:
         return []
 

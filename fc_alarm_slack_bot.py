@@ -215,6 +215,18 @@ def monitor(args):
                            state.history[k] = deque(maxlen=500)
                        state.history[k].append(SeriesPoint(now, inc))
                        state.last_sent_update[k] = (inc, 0.0)
+                    
+                    real_rows = [
+                        r for r in rows 
+                        if safe_int(r.get("incidents", 0)) > 0
+                    ]
+
+                    log(f"[DEBUG] Startup seed={len(rows)} real_rows={len(real_rows)} sample={rows[:1]}")
+
+                    if len(real_rows) == 0:
+                        log("[DEBUG] Startup seed waiting for real table data...")
+                        time.sleep(args.poll_seconds)
+                        continue
 
                     hot_rows = [r for r in rows if safe_int(r["incidents"]) >= args.new_alarm_incidents]
                 
@@ -229,6 +241,20 @@ def monitor(args):
 
                     top_hot = deduped_hot[:5]
 
+                    for i, r in enumerate(rows, 1):
+                        log(f"[DEBUG] row {i}: source={r.get('source')!r} area={r.get('area')!r} incidents={r.get('incidents')!r}")
+
+                    deduped_overall = []
+                    seen_overall_keys = set()
+
+                    for r in real_rows:
+                        k = dedupe_key_for(r)
+                        if k not in seen_overall_keys:
+                            seen_overall_keys.add(k)
+                            deduped_overall.append(r)
+                    
+                    top_overall = deduped_overall[:5]
+
                     summary_lines = [
                         "✅ FC Alarm bot started.",
                         "Startup snapshot loaded from current top 10.",
@@ -236,10 +262,10 @@ def monitor(args):
                         f"Currently hot in top 10: {len(deduped_hot)} alarms."
                     ]
                     
-                    if top_hot:
+                    if top_overall:
                         summary_lines.append("")
-                        summary_lines.append(f"Top {min(5, len(top_hot))} hot alarms already above threshold:")
-                        for i, r in enumerate(top_hot, 1):
+                        summary_lines.append("Current top 5 alarms:")
+                        for i, r in enumerate(top_overall, 1):
                             summary_lines.append(
                                 f"{i}. {r['source']} | Area {r['area']} | Incidents {safe_int(r['incidents'])}"
                         )
