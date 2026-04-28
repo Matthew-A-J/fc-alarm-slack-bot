@@ -14,6 +14,7 @@ class AppConfig:
     startup_grace: int
     min_incidents: int
     trend_window_min: int
+    spike_window_min: int
     spike_delta: int
     new_alarm_incidents: int
     update_min_delta: int
@@ -51,6 +52,7 @@ def parse_args() -> AppConfig:
 
     ap.add_argument("--min-incidents", type=int, default=1)
     ap.add_argument("--trend-window-min", type=int, default=15)
+    ap.add_argument("--spike-window-min", type=int, default=3)
     ap.add_argument("--spike-delta", type=int, default=5)
     ap.add_argument("--new-alarm-incidents", type=int, default=10)
 
@@ -90,6 +92,7 @@ def parse_args() -> AppConfig:
         startup_grace=args.startup_grace,
         min_incidents=args.min_incidents,
         trend_window_min=args.trend_window_min,
+        spike_window_min=args.spike_window_min,
         spike_delta=args.spike_delta,
         new_alarm_incidents=args.new_alarm_incidents,
         update_min_delta=args.update_min_delta,

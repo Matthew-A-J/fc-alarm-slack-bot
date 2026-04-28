@@ -12,7 +12,8 @@ class SeriesPoint:
 
 def detect_events(rows, state: BotState, args):
     now = time.time()
-    window_sec = args.trend_window_min * 60
+    trend_window_sec = args.trend_window_min * 60
+    spike_window_sec = args.spike_window_min * 60
 
     new_hot, spikes, trends, updates = [], [], [], []
     spike_keys, trend_keys = set(), set()
@@ -34,7 +35,7 @@ def detect_events(rows, state: BotState, args):
 
                     state.history[k].append(SeriesPoint(now, inc))
 
-                    while state.history[k] and (now - state.history[k][0].t) > window_sec:
+                    while state.history[k] and (now - state.history[k][0].t) > trend_window_sec:
                         state.history[k].popleft()
 
                     # SPIKE: Δ over window
@@ -44,16 +45,25 @@ def detect_events(rows, state: BotState, args):
                         prev   = state.history[k][-2].incidents
                         delta = newest - oldest
                         delta_from_prev = newest - prev
+                        spike_cutoff = now - spike_window_sec
+                        spike_points = [p for p in state.history[k] if p.t >= spike_cutoff]
+                        rapid_delta = 0
+                        if spike_points:
+                            rapid_delta = newest - spike_points[0].incidents
+                            
+                        spike_delta = max(delta_from_prev, rapid_delta)
 
-                        if newest >= args.min_incidents and delta_from_prev >= args.spike_delta:
+                        
+                        if newest >= args.min_incidents and spike_delta >= args.spike_delta:
                             prev_best = state.last_sent_spike_delta.get(k, -10**9)
-                            if delta_from_prev > prev_best:
+
+                            if spike_delta > prev_best:
                                 rr = dict(r)
                                 rr["prev_incidents"] = oldest
-                                rr["delta"] = delta_from_prev
+                                rr["delta"] = spike_delta
                                 rr["window_min"] = args.trend_window_min
                                 spikes.append(rr)
-                                state.last_sent_spike_delta[k] = delta_from_prev
+                                state.last_sent_spike_delta[k] = spike_delta
                                 spike_keys.add(k)
 
                         # TREND: climbing (no @here)

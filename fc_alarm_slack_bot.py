@@ -221,8 +221,6 @@ def monitor(args):
                         if safe_int(r.get("incidents", 0)) > 0
                     ]
 
-                    log(f"[DEBUG] Startup seed={len(rows)} real_rows={len(real_rows)} sample={rows[:1]}")
-
                     if len(real_rows) == 0:
                         log("[DEBUG] Startup seed waiting for real table data...")
                         time.sleep(args.poll_seconds)
@@ -240,9 +238,6 @@ def monitor(args):
                             deduped_hot.append(r)
 
                     top_hot = deduped_hot[:5]
-
-                    for i, r in enumerate(rows, 1):
-                        log(f"[DEBUG] row {i}: source={r.get('source')!r} area={r.get('area')!r} incidents={r.get('incidents')!r}")
 
                     deduped_overall = []
                     seen_overall_keys = set()
@@ -276,7 +271,7 @@ def monitor(args):
                     log(f"[DEBUG] startup_seed_done before send: {startup_seed_done}")
                     slack_send_to_channel(
                         "\n".join(summary_lines),
-                        channel=channel_health,
+                        channel=channel_main,
                         mention="",
                     )
 
