@@ -293,7 +293,7 @@ def monitor(args):
                             new_hot,
                         ),
                         channel=channel_main,
-                        mention=mention_main,
+                        mention=None,
                     )
 
                 if spikes:
