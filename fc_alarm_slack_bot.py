@@ -22,6 +22,7 @@ from src.fc_alarm_bot.parser import (
     pick_best_dashboard_page,
     read_top_rows,
     try_set_date_to_today,
+    verify_dashboard_settings,
     wait_for_alarm_list,
 )
 import requests
@@ -96,6 +97,19 @@ def monitor(args):
 
         while True:
             try:
+                problems = verify_dashboard_settings(page)
+                problems_set = set(problems) 
+
+                if problems_set != state.last_dashboard_issues:
+                    state.last_dashboard_issues = problems_set
+                    if problems:
+                        print(f'[WARN] Dashboard issues: {problems}')
+
+                if any("Date Range" in p for p in problems):
+                    if time.time() - state.last_date_fix_ts > 60: # 60s cooldown
+                        try_set_date_to_today(page)
+                        state.last_date_fix_ts = time.time()
+                
                 rows = read_top_rows(page, args.rows)
 
                 # Track gateway visibility

@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.fc_alarm_bot.utils import normalize_text, safe_int, dedupe_key_for
 
@@ -184,3 +184,43 @@ def try_set_date_to_today(page) -> tuple[bool, str]:
             continue
 
     return False, "Date unchanged (selector not found)"
+
+
+def verify_dashboard_settings(page) -> list[str]:
+    problems = []
+
+    el = page.get_by_text("Site View")
+    if el.count() == 0 or not el.first.is_visible():
+        problems.append("Site View tab not visible")
+
+    el = page.get_by_text("AR SORT")
+    if el.count() == 0 or not el.first.is_visible():
+        problems.append("AR SORT filter not visible")
+
+    #el = page.get_by_text("OXR1")
+    #if el.count() == 0 or not el.first.is_visible():
+       # problems.append("OXR1 filter not visible")
+
+    el = page.get_by_text("Jam")
+    if el.count() == 0 or not el.first.is_visible():
+        problems.append("Jam filter not visible")
+
+    el = page.get_by_text("Top Alarm Events")
+    if el.count() == 0 or not el.first.is_visible():
+        problems.append("Top Alarm Events filter not visible")
+    
+    #today = datetime.now()
+    #tomorrow = today + timedelta(days=1)
+
+    #today_text = f"{today.strftime('%b')} {today.day}, {today.year}"
+    #tomorrow_text = f"{tomorrow.strftime('%b')} {tomorrow.day}, {tomorrow.year}"
+
+    #el = page.get_by_text(today_text)
+    #if el.count() == 0 or not el.first.is_visible():
+    #    problems.append(f"Date Range Start not set to today ({today_text})")
+
+    #el = page.get_by_text(tomorrow_text)
+    #if el.count() == 0 or not el.first.is_visible():
+    #    problems.append(f"Date Range End not set to tomorrow ({tomorrow_text})")
+
+    return problems

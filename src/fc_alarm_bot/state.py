@@ -14,6 +14,8 @@ class BotState:
     last_seen_ts: Dict[str, float] = field(default_factory=dict)
 
     # Change detection
+    last_date_fix_ts: float = 0.0
+    last_dashboard_issues: set[str] = field(default_factory=set)
     last_sig: Any = None
     last_change_ts: float = field(default_factory=time.time)
 
