@@ -224,3 +224,105 @@ def verify_dashboard_settings(page) -> list[str]:
     #    problems.append(f"Date Range End not set to tomorrow ({tomorrow_text})")
 
     return problems
+
+def try_fix_filters(page):
+    try:
+        el = page.get_by_text("Site View")
+        if el.count() > 0:
+            el.first.click()
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+    try:
+        el = page.get_by_text("AR SORT")
+        if el.count() > 0:
+            el.first.click()
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+    try:
+        el = page.get_by_text("OXR1")
+        if el.count() > 0:
+            el.first.click()
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+    try:
+        el = page.get_by_text("Jam")
+        if el.count() > 0:
+            el.first.click()
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+def click_continue_login_if_visible(page):
+    try:
+        btn = page.get_by_text("CONTINUE TO LOG IN")
+        if btn.count() > 0 and btn.first.is_visible():
+            btn.first.click(timeout=2000)
+            time.sleep(2)
+            return True
+    
+    except Exception:
+        pass
+    
+    return False
+
+def try_set_site(page, site: str = "OXR1") -> bool:
+    try:
+        print("[DEBUG] Trying Site")
+
+        dropdown = page.locator("div.ia_dropdown").nth(1)
+        print("[DEBUG] Site dropdown count:", page.locator("div.ia_dropdown").count())
+
+        if dropdown.count() > 0:
+            dropdown.first.click()
+            time.sleep(0.5)
+            
+        page.keyboard.type(site)
+        time.sleep(0.5)
+        page.keyboard.press("Enter")
+        time.sleep(1)
+        return True
+    
+    except Exception as e:
+        print(f"[DEBUG] Site fix failed: {e}")
+    
+    return False
+
+def click_site_view_if_visible(page) -> bool:
+    try:
+        tab = page.get_by_text("Site View", exact=True)
+        if tab.count() > 0 and tab.first.is_visible():
+            tab.first.click(timeout=2000)
+            time.sleep(1)
+            return True
+    except Exception:
+        pass
+    return False
+
+def try_set_fc_type(page, fc_type: str = "AR SORT") -> bool:
+    try:
+        print("[DEBUG] Trying FC Type")
+
+        dropdown = page.locator("div.ia_dropdown").nth(0)
+        print("[DEBUG] FC dropdown count:", page.locator("div.ia_dropdown").count())
+
+        if dropdown.count() > 0:
+            dropdown.first.click()
+            time.sleep(0.5)
+            
+        page.keyboard.type(fc_type)
+        time.sleep(0.5)
+        page.keyboard.press("Enter")
+        time.sleep(1)
+        return True
+    
+    except Exception as e:
+        print(f"[DEBUG] FC Type fix failed: {e}")
+    
+    
+    return False

@@ -18,12 +18,18 @@ from src.fc_alarm_bot.detector import detect_events
 from src.fc_alarm_bot.state import BotState
 from src.fc_alarm_bot.logger import log
 from src.fc_alarm_bot.parser import (
+    click_site_view_if_visible,
     gateway_banner_visible,
     pick_best_dashboard_page,
     read_top_rows,
     try_set_date_to_today,
     verify_dashboard_settings,
     wait_for_alarm_list,
+    try_fix_filters,
+    click_continue_login_if_visible,
+    try_set_site,
+    click_site_view_if_visible,
+    try_set_fc_type,
 )
 import requests
 from playwright.sync_api import sync_playwright
@@ -91,6 +97,40 @@ def monitor(args):
         log("Startup grace (log in if prompted)...")
         time.sleep(args.startup_grace)
 
+        for _ in range(8): # try up to 8 times
+            clicked = click_continue_login_if_visible(page)
+
+            if clicked:
+                print("[INFO] Clicked Login button")
+
+            time.sleep(4)
+
+            if click_site_view_if_visible(page):
+                print("[INFO] Clicked Site View")
+
+            # if we see the table, breaks early 
+            try:
+                if page.locator("[data-row-index]").count() > 0:
+                    print("[INFO] Table detected, contiuning...")
+                    print("[INFO] Applying dashboard startup settings...")
+
+                    if try_set_fc_type(page, "AR SORT"):
+                        print("[INFO] FC Type set to AR SORT")
+
+                    if try_set_site(page, "OXR1"):
+                       print("[INFO] Site set to OXR1")
+
+                    try_set_date_to_today(page)
+
+                    time.sleep(3)
+                        
+                        
+                    break
+
+            except:
+                pass
+        
+
         wait_for_alarm_list(page, timeout_ms=180_000)
 
         startup_seed_done = False
@@ -104,12 +144,28 @@ def monitor(args):
                     state.last_dashboard_issues = problems_set
                     if problems:
                         print(f'[WARN] Dashboard issues: {problems}')
+                        #if any("filter" in p or "Site View" in p for p in problems):
+                            #try_fix_filters(page)
 
+                        if any("OXR1" in p or "Site" in p for p in problems):
+                            if time.time() - state.last_site_fix_ts > 60:
+                                fixed = try_set_site(page, "OXR1")
+                                if fixed:
+                                    print("[INFO] Site set to OXR1")
+                                    state.last_site_fix_ts = time.time()
+                        
+                        if any("AR SORT" in p or "FC Type" in p for p in problems):
+                            if time.time() - state.last_fc_type_fix_ts > 60:
+                                fixed = try_set_fc_type(page, "AR SORT")
+                                if fixed:
+                                    print("[INFO] FC Type set to AR SORT")
+                                    state.last_fc_type_fix_ts = time.time()
+                
                 if any("Date Range" in p for p in problems):
                     if time.time() - state.last_date_fix_ts > 60: # 60s cooldown
                         try_set_date_to_today(page)
                         state.last_date_fix_ts = time.time()
-                
+
                 rows = read_top_rows(page, args.rows)
 
                 # Track gateway visibility

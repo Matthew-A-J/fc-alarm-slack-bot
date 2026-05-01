@@ -15,6 +15,8 @@ class BotState:
 
     # Change detection
     last_date_fix_ts: float = 0.0
+    last_site_fix_ts: float = 0.0
+    last_fc_type_fix_ts: float = 0.0
     last_dashboard_issues: set[str] = field(default_factory=set)
     last_sig: Any = None
     last_change_ts: float = field(default_factory=time.time)
