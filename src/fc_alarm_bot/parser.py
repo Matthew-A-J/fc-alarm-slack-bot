@@ -139,51 +139,80 @@ def pick_best_dashboard_page(context, url_contains: str, url_to_open: str, log):
     return page
 
 
-def try_set_date_to_today(page) -> tuple[bool, str]:
-    now = datetime.now()
-    m, d = now.month, now.day
-    candidates = [
-        f"{m}/{d}",
-        f"{m}/{d:02d}",
-        f"{m:02d}/{d:02d}",
-        now.strftime("%m/%d/%Y"),
-        now.strftime("%m/%d/%y"),
-    ]
-
+def try_set_date_to_today(page) -> bool:
     try:
-        btn = page.locator("button:has-text('Today')")
-        if btn.count() > 0 and btn.first.is_visible():
-            btn.first.click(timeout=2000)
-            time.sleep(0.3)
-    except Exception:
-        pass
+        print("[DEBUG] Setting date to TODAY")
 
-    for sel in [
-        "button:has-text('Date')",
-        "button:has-text('Day')",
-        "div[role='button']:has-text('Date')",
-        "div[role='button']:has-text('Day')",
-        "div[role='button']:has-text('Today')",
-    ]:
-        try:
-            loc = page.locator(sel)
-            if loc.count() > 0 and loc.first.is_visible():
-                loc.first.click(timeout=1500)
-                time.sleep(0.3)
-                break
-        except Exception:
-            continue
+        today = datetime.now()
+        tomorrow = today + timedelta(days=1)
 
-    for cand in candidates:
-        try:
-            item = page.get_by_text(cand, exact=False)
-            if item.count() > 0 and item.first.is_visible():
-                item.first.click(timeout=1500)
-                return True, f"Date set to {cand}"
-        except Exception:
-            continue
+        start_str = f"{today.strftime('%b')} {today.day}, {today.year} 12:00 AM"
+        end_str = f"{tomorrow.strftime('%b')} {tomorrow.day}, {tomorrow.year} 12:00 AM"
 
-    return False, "Date unchanged (selector not found)"
+        inputs = page.locator("input[type='text']")
+
+        for i in range(inputs.count()):
+            try:
+                print(f"[DEBUG] text input {i} value:", inputs.nth(i).input_value())
+            except Exception as e:
+                print(f"[DEBUG]text input {i} error:", e)
+
+
+        start_input = inputs.nth(1)
+        end_input = inputs.nth(2)
+        start_input.evaluate(
+            """(el, value) => {
+                el.value = value;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('chnage', { bubbles: true }));
+                el.blur();
+            }""",
+            start_str,
+        )
+
+        time.sleep(0.5)
+
+        end_input.evaluate(
+            """(el, value) => {
+                el.value = value;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.blur();
+            }""",
+            end_str,
+        )
+        
+        time.sleep(0.5)
+
+        page.keyboard.press("Escape")
+        page.mouse.click(1000, 300)
+
+        time.sleep(5)
+
+        start_after = inputs.nth(1).input_value()
+        end_after = inputs.nth(2).input_value()
+
+        print("[DEBUG] start after:", start_after)
+        print("[DEBUG] end after:", end_after)
+
+        if start_str in start_after and end_str in end_after:
+            print("[SUCCESS] Date CONFIRMED")
+
+            page.keyboard.press("Enter")
+            time.sleep(0.5)
+
+            page.mouse.click(1000, 300)
+            time.sleep(2)
+
+            print("[INFO] Dashboard refresh triggered")
+            return True
+        
+        print("[FAIL] Date NOT applied")
+        return False
+
+    except Exception as e:
+        print(f"[DEBUG] Date set failed: {e}")
+        return False
 
 
 def verify_dashboard_settings(page) -> list[str]:
@@ -275,18 +304,29 @@ def try_set_site(page, site: str = "OXR1") -> bool:
     try:
         print("[DEBUG] Trying Site")
 
-        dropdown = page.locator("div.ia_dropdown").nth(1)
+        dropdown = page.locator("div.ia_dropdown").nth(2)
         print("[DEBUG] Site dropdown count:", page.locator("div.ia_dropdown").count())
 
         if dropdown.count() > 0:
             dropdown.first.click()
             time.sleep(0.5)
             
+        page.keyboard.press("Control+A")
         page.keyboard.type(site)
         time.sleep(0.5)
+        page.keyboard.press("ArrowDown")
+        time.sleep(0.2)
         page.keyboard.press("Enter")
-        time.sleep(1)
-        return True
+        time.sleep(2)
+       
+        body = page.locator("body").inner_text()
+
+        if f"Site: {site}" in body:
+            print("[SUCESS] Site CONFIRMED")
+            return True
+        
+        else:
+            print("[FAIL] Site NOT applied")
     
     except Exception as e:
         print(f"[DEBUG] Site fix failed: {e}")
@@ -308,18 +348,28 @@ def try_set_fc_type(page, fc_type: str = "AR SORT") -> bool:
     try:
         print("[DEBUG] Trying FC Type")
 
-        dropdown = page.locator("div.ia_dropdown").nth(0)
+        dropdown = page.locator("div.ia_dropdown").nth(1)
         print("[DEBUG] FC dropdown count:", page.locator("div.ia_dropdown").count())
 
         if dropdown.count() > 0:
             dropdown.first.click()
             time.sleep(0.5)
             
+        page.keyboard.press("Control+A")
         page.keyboard.type(fc_type)
         time.sleep(0.5)
+        page.keyboard.press("ArrowDown")
+        time.sleep(0.2)
         page.keyboard.press("Enter")
-        time.sleep(1)
-        return True
+        time.sleep(2)
+        
+        body = page.locator("body").inner_text()
+
+        if "FC Type: AR SORT" in body:
+            print("[SUCCESS] FC Type CONFIRMED")
+            return True
+        else:
+            print("[FAIL] FC Type NOT applied")
     
     except Exception as e:
         print(f"[DEBUG] FC Type fix failed: {e}")

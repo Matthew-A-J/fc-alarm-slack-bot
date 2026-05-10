@@ -113,15 +113,17 @@ def monitor(args):
                 if page.locator("[data-row-index]").count() > 0:
                     print("[INFO] Table detected, contiuning...")
                     print("[INFO] Applying dashboard startup settings...")
-
+                    
+                    if try_set_date_to_today(page):
+                        print("[INFO] Date set to today/tomorrow")
+                    
                     if try_set_fc_type(page, "AR SORT"):
                         print("[INFO] FC Type set to AR SORT")
 
                     if try_set_site(page, "OXR1"):
                        print("[INFO] Site set to OXR1")
 
-                    try_set_date_to_today(page)
-
+                    print("[DEBUG] Waiting for dashboard to stabilize...")
                     time.sleep(3)
                         
                         
@@ -188,11 +190,11 @@ def monitor(args):
                 should_recover = False
                 reason = None
 
-                if gw_visible and args.recover_on_gateway:
-                    # gateway-based recovery uses its own cooldown
-                    if (time.time() - state.last_recovery_ts) >= (args.gateway_refresh_cooldown_min * 60):
-                        should_recover = True
-                        reason = "gateway_visible"
+                #if gw_visible and args.recover_on_gateway:
+                #   gateway-based recovery uses its own cooldown
+                #    if (time.time() - state.last_recovery_ts) >= (args.gateway_refresh_cooldown_min * 60):
+                #      should_recover = True
+                #       reason = "gateway_visible"
 
                 if (not should_recover) and args.recover_on_stale and stale_minutes >= args.stale_minutes:
                     if (time.time() - state.last_recovery_ts) >= (args.stale_refresh_cooldown_min * 60):
