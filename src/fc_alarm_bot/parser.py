@@ -159,44 +159,26 @@ def try_set_date_to_today(page) -> bool:
 
 
         start_input = inputs.nth(1)
-        end_input = inputs.nth(2)
-        start_input.evaluate(
-            """(el, value) => {
-                el.value = value;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('chnage', { bubbles: true }));
-                el.blur();
-            }""",
-            start_str,
-        )
-
-        time.sleep(0.5)
-
-        end_input.evaluate(
-            """(el, value) => {
-                el.value = value;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                el.blur();
-            }""",
-            end_str,
-        )
         
-        time.sleep(0.5)
+        # Open Start Date picker
+        start_input.locator("..").click()
+        time.sleep(1)
 
-        page.keyboard.press("Escape")
-        page.mouse.click(1000, 300)
+        # Click today's calendar tile
+        today_day = str(today.day)
 
-        time.sleep(5)
+        page.locator(
+            f".ia_dateRangePicker__calendar__dayTile[data-day='{today_day}']"
+        ).click()
+
+        time.sleep(2)
 
         start_after = inputs.nth(1).input_value()
-        end_after = inputs.nth(2).input_value()
-
         print("[DEBUG] start after:", start_after)
-        print("[DEBUG] end after:", end_after)
+        
 
-        if start_str in start_after and end_str in end_after:
-            print("[SUCCESS] Date CONFIRMED")
+        if start_str in start_after:
+            print("[SUCCESS] Start Date CONFIRMED")
 
             page.keyboard.press("Enter")
             time.sleep(0.5)
@@ -205,13 +187,24 @@ def try_set_date_to_today(page) -> bool:
             time.sleep(2)
 
             print("[INFO] Dashboard refresh triggered")
+
+            print("[INFO] Date set to today/tomorrow")
+
+            inputs = page.locator("input[type='text']")
+            for i in [1, 2]:
+                try:
+                    print(f"[DEBUG AFTER MANUAL] input {i} value:", inputs.nth(i).input_value())
+                    print(f"[DEBUG AFTER MANUAL] input {i} html:", inputs.nth(i).evaluate("(el) => el.outerHTML"))
+                except Exception as e:
+                    print(f"[DEBUG AFTER MANUAL] input {i} error:", e)
+
             return True
         
-        print("[FAIL] Date NOT applied")
-        return False
+        print("[FAIL] Start Date NOT applied")
+        #return False
 
     except Exception as e:
-        print(f"[DEBUG] Date set failed: {e}")
+        print(f"[DEBUG] Start Date set failed: {e}")
         return False
 
 
