@@ -123,7 +123,6 @@ def monitor(args):
                     if try_set_site(page, "OXR1"):
                        print("[INFO] Site set to OXR1")
 
-                    print("[DEBUG] Waiting for dashboard to stabilize...")
                     time.sleep(3)
                         
                         
@@ -136,9 +135,72 @@ def monitor(args):
         wait_for_alarm_list(page, timeout_ms=180_000)
 
         startup_seed_done = False
+        data_valid = False
+        settings_issue_active = False
+        tab_issue_active = False
+
+        last_auto_refresh_ts = time.time()
+        AUTO_REFRESH_SECONDS = 30 * 60 
 
         while True:
             try:
+                now_ts = time.time()
+
+                if click_continue_login_if_visible(page):
+                    slack_send_to_channel(
+                        "⚠️ Login screen detected.\n"
+                        "Alarm alerts are suppressed while the bot restores the dashboard.",
+                        channel=channel_health,
+                        mention="@here",
+                    )
+
+                    print("[WARN] Login screen detected - clicked continue login")
+                    time.sleep(8)
+
+                    if click_site_view_if_visible(page):
+                        print("[INFO] Recovered Site View after login")
+
+                    time.sleep(5)
+                    continue
+
+                if now_ts - last_auto_refresh_ts > AUTO_REFRESH_SECONDS:
+                    print("[INFO] Running scheduled 30-minute dashboard refresh...")
+
+                    page.reload()
+                    time.sleep(10)
+
+                    page.get_by_text("Site View", exact=False).click()
+                    time.sleep(3)
+
+                    last_auto_refresh_ts = time.time()
+
+                    print("[INFO] Scheduled dashboard refresh complete.")
+
+                if not page.get_by_text("Top Alarm Events", exact=False).count():
+                    log("[WARN] Site View not active - attempting to return to Site View")
+
+                    if not tab_issue_active:
+                        slack_send_to_channel(
+                            "⚠️ Wrong dashboard tab detected.\n"
+                            "Returning to Site View. Alarm alerts are suppressed during recovery.",
+                            channel=channel_health,
+                            mention="@here",
+                        )
+                        tab_issue_active = True
+
+                    page.get_by_text("Site View", exact=False).click()
+                    time.sleep(5)
+                    continue
+
+                if tab_issue_active:
+                    slack_send_to_channel(
+                        "✅ Site View recovered.\n"
+                        "Dashboard monitoring has resumed.",
+                        channel=channel_health,
+                        mention="",
+                    )
+                    tab_issue_active = False    
+
                 problems = verify_dashboard_settings(page)
                 problems_set = set(problems) 
 
@@ -167,11 +229,49 @@ def monitor(args):
                     if time.time() - state.last_date_fix_ts > 60: # 60s cooldown
                         try_set_date_to_today(page)
                         state.last_date_fix_ts = time.time()
+                
+                if problems_set:
+                    log("[WARN] Dashboard settings were invalid - suppressing alerts this poll")
+
+                    if not settings_issue_active:
+                        slack_send_to_channel(
+                            "⚠️ Dashboard settings issue detected.\n"
+                            f"Issues: {', '.join(problems)}\n"
+                            "Alarm alerts are suppressed until settings are corrected.",
+                            channel=channel_health,
+                            mention="@here",
+                        )
+                        settings_issue_active = True
+
+                    time.sleep(args.poll_seconds)
+                    continue
+
+                if settings_issue_active:
+                    slack_send_to_channel(
+                        "✅ Dashboard settings recovered.\n"
+                        "Alarm alerts are enabled again.",
+                        channel=channel_health,
+                        mention="",
+                    )
+                    settings_issue_active = False    
 
                 rows = read_top_rows(page, args.rows)
+                
+                gw_visible = gateway_banner_visible(page)
+                
+                data_valid = (
+                    bool(rows)
+                    and len(rows) > 0
+                    and not gw_visible
+                    and not problems_set
+                )
+
+                if not data_valid:
+                    log("[WARN] Data invalid - suppressing alarm alerts")
+                else:
+                    log("[INFO] Data valid - alarm alerts enabled")
 
                 # Track gateway visibility
-                gw_visible = gateway_banner_visible(page)
 
                 # Track staleness based on top-rows signature
                 if rows:
@@ -294,7 +394,6 @@ def monitor(args):
                     ]
 
                     if len(real_rows) == 0:
-                        log("[DEBUG] Startup seed waiting for real table data...")
                         time.sleep(args.poll_seconds)
                         continue
 
@@ -340,7 +439,14 @@ def monitor(args):
                     if startup_seed_done:
                         raise RuntimeError("startup summary send reached after startup_seed_done=True")
                     
-                    log(f"[DEBUG] startup_seed_done before send: {startup_seed_done}")
+                    log("[INFO] Waiting for dashboard stabilization before startup summary...")
+                    time.sleep(15)
+
+                    if not data_valid:
+                        log("[WARN] Startup summary suppresed because data is invalid")
+                        time.sleep(args.poll_seconds)
+                        continue
+                    
                     slack_send_to_channel(
                         "\n".join(summary_lines),
                         channel=channel_main,
@@ -348,12 +454,17 @@ def monitor(args):
                     )
 
                     startup_seed_done = True
-                    log(f"[DEBUG] startup_seed_done after send: {startup_seed_done}")
+                    
                 
                     time.sleep(args.poll_seconds)
                     continue
                 # STARTUP BLOCK ENDS
                 else:
+                    if not data_valid:
+                        log("[WARN] Skipping alarm detection because data is invalid")
+                        time.sleep(args.poll_seconds)
+                        continue
+
                     now = time.time()
                     new_hot, spikes, trends, updates = detect_events(rows, state, args)
 
@@ -424,7 +535,10 @@ def monitor(args):
                 log(f"[WARN] Poll failed (#{state.consecutive_failures}). {str(e)}")
             
                 now_ts = time.time()
-                if state.consecutive_failures >= args.fail_alert_after and (now_ts - state.last_fail_alert_ts) >= (args.fail_alert_cooldown_min * 60):
+                if state.consecutive_failures == 1 or (
+                    state.consecutive_failures >= args.fail_alert_after
+                    and (now_ts - state.last_fail_alert_ts) >= args.fail_alert_cooldown_mins * 60
+                ):
                     state.last_fail_alert_ts = now_ts
                     mention = mention_health_issue if not state.here_sent_for_failure_episode else ""
                     state.here_sent_for_failure_episode = True

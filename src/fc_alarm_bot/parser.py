@@ -84,12 +84,7 @@ def gateway_banner_visible(page) -> bool:
             return True
     except Exception:
         pass
-    try:
-        t = page.get_by_text("No Connection to Gateway", exact=False)
-        if t.count() > 0 and t.first.is_visible():
-            return True
-    except Exception:
-        pass
+    
     return False
 
 
@@ -141,7 +136,7 @@ def pick_best_dashboard_page(context, url_contains: str, url_to_open: str, log):
 
 def try_set_date_to_today(page) -> bool:
     try:
-        print("[DEBUG] Setting date to TODAY")
+        
 
         today = datetime.now()
         tomorrow = today + timedelta(days=1)
@@ -150,13 +145,6 @@ def try_set_date_to_today(page) -> bool:
         end_str = f"{tomorrow.strftime('%b')} {tomorrow.day}, {tomorrow.year} 12:00 AM"
 
         inputs = page.locator("input[type='text']")
-
-        for i in range(inputs.count()):
-            try:
-                print(f"[DEBUG] text input {i} value:", inputs.nth(i).input_value())
-            except Exception as e:
-                print(f"[DEBUG]text input {i} error:", e)
-
 
         start_input = inputs.nth(1)
         
@@ -174,7 +162,6 @@ def try_set_date_to_today(page) -> bool:
         time.sleep(2)
 
         start_after = inputs.nth(1).input_value()
-        print("[DEBUG] start after:", start_after)
         
 
         if start_str in start_after:
@@ -191,12 +178,7 @@ def try_set_date_to_today(page) -> bool:
             print("[INFO] Date set to today/tomorrow")
 
             inputs = page.locator("input[type='text']")
-            for i in [1, 2]:
-                try:
-                    print(f"[DEBUG AFTER MANUAL] input {i} value:", inputs.nth(i).input_value())
-                    print(f"[DEBUG AFTER MANUAL] input {i} html:", inputs.nth(i).evaluate("(el) => el.outerHTML"))
-                except Exception as e:
-                    print(f"[DEBUG AFTER MANUAL] input {i} error:", e)
+            
 
             return True
         
@@ -204,7 +186,7 @@ def try_set_date_to_today(page) -> bool:
         #return False
 
     except Exception as e:
-        print(f"[DEBUG] Start Date set failed: {e}")
+        
         return False
 
 
@@ -219,10 +201,6 @@ def verify_dashboard_settings(page) -> list[str]:
     if el.count() == 0 or not el.first.is_visible():
         problems.append("AR SORT filter not visible")
 
-    #el = page.get_by_text("OXR1")
-    #if el.count() == 0 or not el.first.is_visible():
-       # problems.append("OXR1 filter not visible")
-
     el = page.get_by_text("Jam")
     if el.count() == 0 or not el.first.is_visible():
         problems.append("Jam filter not visible")
@@ -231,19 +209,46 @@ def verify_dashboard_settings(page) -> list[str]:
     if el.count() == 0 or not el.first.is_visible():
         problems.append("Top Alarm Events filter not visible")
     
-    #today = datetime.now()
-    #tomorrow = today + timedelta(days=1)
+    today = datetime.now()
+    tomorrow = today + timedelta(days=1)
 
-    #today_text = f"{today.strftime('%b')} {today.day}, {today.year}"
-    #tomorrow_text = f"{tomorrow.strftime('%b')} {tomorrow.day}, {tomorrow.year}"
+    today_text = today.strftime("%b ") + str(today.day)
+    tomorrow_text = tomorrow.strftime("%b ") + str(tomorrow.day)
 
-    #el = page.get_by_text(today_text)
-    #if el.count() == 0 or not el.first.is_visible():
-    #    problems.append(f"Date Range Start not set to today ({today_text})")
+    inputs = page.locator("input[type='text']")
 
-    #el = page.get_by_text(tomorrow_text)
-    #if el.count() == 0 or not el.first.is_visible():
-    #    problems.append(f"Date Range End not set to tomorrow ({tomorrow_text})")
+    try:
+        start_val = inputs.nth(1).input_value()
+        end_val = inputs.nth(2).input_value()
+
+        if today_text not in start_val:
+            problems.append(f"Date Range Start incorrect: {start_val}")
+
+        if tomorrow_text not in end_val:
+            problems.append(f"Date Range End incorrect: {end_val}")
+
+    except Exception as e:
+        problems.append(f"Date inputs unreadable: {e}")
+
+    try:
+        site_dropdown = page.locator(".iaDropdownCommon_value").nth(2)
+        site_text = site_dropdown.inner_text().strip()
+
+        if site_text != "OXR1":
+            problems.append(f"Site incorrect: {site_text}")
+
+    except Exception as e:
+        problems.append(f"Site unreadable: {e}")
+
+    try:
+        fc_dropdown = page.locator(".iaDropdownCommon_value").nth(1)
+        fc_text = fc_dropdown.inner_text().strip()
+
+        if fc_text != "AR SORT":
+            problems.append(f"FC Type incorrect: {fc_text}")
+
+    except Exception as e:
+        problems.append(f"FC Type unreadable: {e}")
 
     return problems
 
@@ -295,11 +300,10 @@ def click_continue_login_if_visible(page):
 
 def try_set_site(page, site: str = "OXR1") -> bool:
     try:
-        print("[DEBUG] Trying Site")
+        
 
         dropdown = page.locator("div.ia_dropdown").nth(2)
-        print("[DEBUG] Site dropdown count:", page.locator("div.ia_dropdown").count())
-
+        
         if dropdown.count() > 0:
             dropdown.first.click()
             time.sleep(0.5)
@@ -322,9 +326,7 @@ def try_set_site(page, site: str = "OXR1") -> bool:
             print("[FAIL] Site NOT applied")
     
     except Exception as e:
-        print(f"[DEBUG] Site fix failed: {e}")
-    
-    return False
+        return False
 
 def click_site_view_if_visible(page) -> bool:
     try:
@@ -339,10 +341,10 @@ def click_site_view_if_visible(page) -> bool:
 
 def try_set_fc_type(page, fc_type: str = "AR SORT") -> bool:
     try:
-        print("[DEBUG] Trying FC Type")
+        
 
         dropdown = page.locator("div.ia_dropdown").nth(1)
-        print("[DEBUG] FC dropdown count:", page.locator("div.ia_dropdown").count())
+    
 
         if dropdown.count() > 0:
             dropdown.first.click()
@@ -365,7 +367,5 @@ def try_set_fc_type(page, fc_type: str = "AR SORT") -> bool:
             print("[FAIL] FC Type NOT applied")
     
     except Exception as e:
-        print(f"[DEBUG] FC Type fix failed: {e}")
-    
-    
-    return False
+        print(f"[WARN] FC Type fix failed: {e}")
+        return False
